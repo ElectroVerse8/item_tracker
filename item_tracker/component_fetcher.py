@@ -49,7 +49,7 @@ def select_serial_port() -> serial.Serial:
         port_var = tk.StringVar(value=ports[0] if ports else '')
 
         option = tk.OptionMenu(dlg, port_var, *ports)
-        option.pack(padx=10, pady=5)
+        option.pack(padx=10, pady=5, fill=tk.X, expand=True)
 
         def refresh():
             new_ports = [p.device for p in list_ports.comports()]
@@ -62,7 +62,7 @@ def select_serial_port() -> serial.Serial:
             else:
                 port_var.set('')
 
-        tk.Button(dlg, text='Refresh', command=refresh).pack(pady=2)
+        tk.Button(dlg, text='Refresh', command=refresh).pack(pady=2, fill=tk.X)
 
         selected = {'port': None}
 
@@ -70,7 +70,9 @@ def select_serial_port() -> serial.Serial:
             selected['port'] = port_var.get()
             dlg.destroy()
 
-        tk.Button(dlg, text='OK', command=confirm).pack(pady=5)
+        tk.Button(dlg, text='OK', command=confirm).pack(pady=5, fill=tk.X)
+        dlg.update_idletasks()
+        dlg.minsize(max(dlg.winfo_reqwidth(), 200), dlg.winfo_reqheight())
         dlg.mainloop()
         return selected['port']
 
@@ -127,7 +129,7 @@ def main():
     search_var = tk.StringVar()
     search_frame = tk.Frame(root)
     search_entry = tk.Entry(search_frame, textvariable=search_var, width=20)
-    search_entry.pack(side=tk.LEFT, padx=5, pady=5)
+    search_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     # Trigger search when the user presses Enter inside the entry field.
     search_entry.bind("<Return>", lambda event: handle_search())
 
@@ -148,11 +150,11 @@ def main():
 
     search_btn = tk.Button(search_frame, text='Search', command=handle_search)
     search_btn.pack(side=tk.LEFT, padx=5)
-    search_frame.pack()
+    search_frame.pack(fill=tk.X)
 
     list_var = tk.StringVar(value=[])
     listbox = tk.Listbox(root, listvariable=list_var, width=30, height=10)
-    listbox.pack(padx=5, pady=5)
+    listbox.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
     def handle_next():
         if location_buffer:
@@ -170,10 +172,15 @@ def main():
 
     root.protocol('WM_DELETE_WINDOW', handle_exit)
 
-    next_btn = tk.Button(root, text='Next', command=handle_next)
-    next_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    exit_btn = tk.Button(root, text='Exit', command=handle_exit)
-    exit_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    button_frame = tk.Frame(root)
+    next_btn = tk.Button(button_frame, text='Next', command=handle_next)
+    next_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    exit_btn = tk.Button(button_frame, text='Exit', command=handle_exit)
+    exit_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    button_frame.pack(fill=tk.X)
+
+    root.update_idletasks()
+    root.minsize(max(root.winfo_reqwidth(), 300), root.winfo_reqheight())
 
     def periodic():
         try:
