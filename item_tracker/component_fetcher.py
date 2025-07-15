@@ -231,9 +231,12 @@ def main():
 
     def periodic():
         try:
-            ser.readline()
+            line = ser.readline().decode('utf-8')
         except Exception:
-            pass
+            line = ''
+
+        if line == 'NEXT\n':
+            handle_next()
 
         if location_buffer:
             if not homed:
