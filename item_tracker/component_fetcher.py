@@ -218,15 +218,6 @@ def main():
                 send_home()
                 current_index = 0
 
-    def handle_find():
-        nonlocal current_index
-        if location_buffer:
-            sel = listbox.curselection()
-            if sel:
-                current_index = sel[0]
-            send_location(current_index)
-
-
     def handle_exit():
         location_buffer.clear()
         list_var.set([])
@@ -237,8 +228,6 @@ def main():
     button_frame = tk.Frame(root)
     next_btn = tk.Button(button_frame, text='Next', command=handle_next)
     next_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
-    find_btn = tk.Button(button_frame, text='Find', command=handle_find)
-    find_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     home_btn = tk.Button(button_frame, text='Home', command=send_home)
     home_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     exit_btn = tk.Button(button_frame, text='Exit', command=handle_exit)
