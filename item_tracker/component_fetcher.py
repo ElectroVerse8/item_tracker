@@ -29,6 +29,8 @@ from serial.tools import list_ports
 BAUD_RATE = 115200
 EXCEL_PATH = Path('locations.xlsx')  # Update path if needed
 EXCEL_SHEET = 'Sheet1'
+# Interval in milliseconds for periodically sending coordinates/home
+PERIOD_MS = 500
 
 # -------------------------------------------------------------------
 
@@ -122,6 +124,7 @@ def main():
     ser = select_serial_port()
 
     location_buffer = []
+    current_index = 0  # index of the item currently being sent
     homed = False
 
     root = tk.Tk()
@@ -158,6 +161,7 @@ def main():
     search_entry.bind("<Return>", lambda event: handle_search())
 
     def handle_search():
+        nonlocal current_index
         text = search_var.get()
         groups = parse_locations(text)
         for loc in groups:
@@ -172,7 +176,8 @@ def main():
         list_var.set([e[0] for e in location_buffer])
         search_var.set('')
         if location_buffer:
-            send_location(0)
+            current_index = 0
+            send_location(current_index)
 
     search_btn = tk.Button(search_frame, text='Search', command=handle_search)
     search_btn.pack(side=tk.LEFT, padx=5)
@@ -183,29 +188,35 @@ def main():
     listbox.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
     def handle_next():
-        nonlocal homed
+        nonlocal homed, current_index
         if not location_buffer:
             highlight_current(-1)
             send_home()
+            current_index = 0
             return
 
         if homed:
             homed = False
-            send_location(0)
+            send_location(current_index)
         else:
-            location_buffer.pop(0)
+            location_buffer.pop(current_index)
             list_var.set([e[0] for e in location_buffer])
             if location_buffer:
-                send_location(0)
+                if current_index >= len(location_buffer):
+                    current_index = len(location_buffer) - 1
+                send_location(current_index)
             else:
                 highlight_current(-1)
                 send_home()
+                current_index = 0
 
     def handle_find():
+        nonlocal current_index
         if location_buffer:
             sel = listbox.curselection()
-            index = sel[0] if sel else 0
-            send_location(index)
+            if sel:
+                current_index = sel[0]
+            send_location(current_index)
 
 
     def handle_exit():
@@ -239,14 +250,16 @@ def main():
             handle_next()
 
         if location_buffer:
-            if not homed:
-                send_location(0)
+            if homed:
+                send_home()
+            else:
+                send_location(current_index)
         else:
             send_home()
 
-        root.after(100, periodic)
+        root.after(PERIOD_MS, periodic)
 
-    root.after(100, periodic)
+    root.after(PERIOD_MS, periodic)
     root.mainloop()
     ser.close()
 
