@@ -122,9 +122,33 @@ def main():
     ser = select_serial_port()
 
     location_buffer = []
+    homed = False
 
     root = tk.Tk()
     root.title('Component Fetcher')
+
+    def highlight_current(index: int = 0):
+        """Highlight the listbox entry at ``index`` or clear selection."""
+        listbox.selection_clear(0, tk.END)
+        if location_buffer and 0 <= index < len(location_buffer):
+            listbox.selection_set(index)
+
+    def send_home():
+        nonlocal homed
+        homed = True
+        ser.write(b'Home\n')
+        print('Sending to ESP32: Home')
+        highlight_current(-1)
+
+    def send_location(index: int = 0):
+        nonlocal homed
+        homed = False
+        if 0 <= index < len(location_buffer):
+            label, x_cm, y_cm = location_buffer[index]
+            msg = f"X:{x_cm:.2f},Y:{y_cm:.2f}\n"
+            ser.write(msg.encode('utf-8'))
+            print(f"Sending to ESP32: {msg.strip()}")
+            highlight_current(index)
 
     search_var = tk.StringVar()
     search_frame = tk.Frame(root)
@@ -147,6 +171,8 @@ def main():
                     location_buffer.append(entry)
         list_var.set([e[0] for e in location_buffer])
         search_var.set('')
+        if location_buffer:
+            send_location(0)
 
     search_btn = tk.Button(search_frame, text='Search', command=handle_search)
     search_btn.pack(side=tk.LEFT, padx=5)
@@ -157,12 +183,29 @@ def main():
     listbox.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
     def handle_next():
-        if location_buffer:
-            label, x_cm, y_cm = location_buffer.pop(0)
-            msg = f"X:{x_cm:.2f},Y:{y_cm:.2f}\n"
-            ser.write(msg.encode('utf-8'))
-            print(f"Sending to ESP32: {msg.strip()}")
+        nonlocal homed
+        if not location_buffer:
+            highlight_current(-1)
+            send_home()
+            return
+
+        if homed:
+            homed = False
+            send_location(0)
+        else:
+            location_buffer.pop(0)
             list_var.set([e[0] for e in location_buffer])
+            if location_buffer:
+                send_location(0)
+            else:
+                highlight_current(-1)
+                send_home()
+
+    def handle_find():
+        if location_buffer:
+            sel = listbox.curselection()
+            index = sel[0] if sel else 0
+            send_location(index)
 
 
     def handle_exit():
@@ -175,6 +218,10 @@ def main():
     button_frame = tk.Frame(root)
     next_btn = tk.Button(button_frame, text='Next', command=handle_next)
     next_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    find_btn = tk.Button(button_frame, text='Find', command=handle_find)
+    find_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    home_btn = tk.Button(button_frame, text='Home', command=send_home)
+    home_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     exit_btn = tk.Button(button_frame, text='Exit', command=handle_exit)
     exit_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     button_frame.pack(fill=tk.X)
@@ -187,8 +234,16 @@ def main():
             line = ser.readline().decode('utf-8')
         except Exception:
             line = ''
+
         if line == 'NEXT\n':
             handle_next()
+
+        if location_buffer:
+            if not homed:
+                send_location(0)
+        else:
+            send_home()
+
         root.after(100, periodic)
 
     root.after(100, periodic)
