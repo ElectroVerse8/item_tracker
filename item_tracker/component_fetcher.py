@@ -187,6 +187,14 @@ def main():
     listbox = tk.Listbox(root, listvariable=list_var, width=30, height=10)
     listbox.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
+    def on_select(event):
+        nonlocal current_index
+        sel = listbox.curselection()
+        if sel:
+            current_index = sel[0]
+
+    listbox.bind('<<ListboxSelect>>', on_select)
+
     def handle_next():
         nonlocal homed, current_index
         if not location_buffer:
