@@ -1,72 +1,149 @@
-#include <AccelStepper.h>
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESP_FlexyStepper.h>
+#include <M5Unified.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 
-// Pin definitions for X and Y stepper drivers
-const int STEP_PIN_X = 2;
-const int DIR_PIN_X  = 4;
-const int STEP_PIN_Y = 15;
-const int DIR_PIN_Y  = 16;
+// WiFi credentials (replace with actual network details)
+const char* WIFI_SSID = "YOUR_SSID";
+const char* WIFI_PASSWORD = "YOUR_PASSWORD";
 
-// Number of step pulses needed to move one centimeter.
-// Adjust this to calibrate distance vs pulses.
-float stepsPerCm = 200.0f; // ratio factor
+// Stepper motor pin definitions
+const int ENABLE_PIN = 4; // PA4 shared enable
+const int STEP_PIN_X = 16; // X-axis STEP
+const int DIR_PIN_X  = 17; // X-axis DIR
+const int STEP_PIN_Y = 12; // Y-axis STEP
+const int DIR_PIN_Y  = 13; // Y-axis DIR
 
-// Acceleration in steps/s^2. Can be tuned at runtime if desired.
-float accel = 200.0f;
+ESP_FlexyStepper stepperX;
+ESP_FlexyStepper stepperY;
 
-// Maximum speed (steps/s) for the steppers
-float maxSpeed = 1000.0f;
+struct TargetPosition {
+    long x;
+    long y;
+};
 
-// Create stepper driver instances
-AccelStepper stepperX(AccelStepper::DRIVER, STEP_PIN_X, DIR_PIN_X);
-AccelStepper stepperY(AccelStepper::DRIVER, STEP_PIN_Y, DIR_PIN_Y);
+struct SystemStatus {
+    long currentX;
+    long currentY;
+    bool moving;
+    bool error;
+};
 
-long targetX = 0;
-long targetY = 0;
-bool moving = false;
+// Shared variables protected by critical sections
+volatile TargetPosition pendingTarget = {0, 0};
+volatile bool targetPending = false;
+portMUX_TYPE targetMux = portMUX_INITIALIZER_UNLOCKED;
 
-void setup() {
-    Serial.begin(115200);
+SystemStatus status = {0, 0, false, false};
+portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 
-    stepperX.setMaxSpeed(maxSpeed);
-    stepperY.setMaxSpeed(maxSpeed);
-    stepperX.setAcceleration(accel);
-    stepperY.setAcceleration(accel);
+AsyncWebServer server(80);
 
-    Serial.println("READY");
-    Serial.println("NEXT"); // request first point
+void handleMove(AsyncWebServerRequest *request) {
+    if (request->hasParam("x") && request->hasParam("y")) {
+        long x = request->getParam("x")->value().toInt();
+        long y = request->getParam("y")->value().toInt();
+        portENTER_CRITICAL(&targetMux);
+        pendingTarget.x = x;
+        pendingTarget.y = y;
+        targetPending = true;
+        portEXIT_CRITICAL(&targetMux);
+        request->send(200, "text/plain", "OK");
+    } else {
+        request->send(400, "text/plain", "Missing parameters");
+    }
 }
 
-void parseCommand(const String &line) {
-    // Expect lines in the form "X:12.34,Y:56.78"
-    int xIndex = line.indexOf('X');
-    int commaIndex = line.indexOf(',');
-    int yIndex = line.indexOf('Y');
-    if (xIndex != -1 && commaIndex != -1 && yIndex != -1) {
-        float x = line.substring(xIndex + 2, commaIndex).toFloat();
-        float y = line.substring(yIndex + 2).toFloat();
-        targetX = (long)(x * stepsPerCm);
-        targetY = (long)(y * stepsPerCm);
-        stepperX.moveTo(targetX);
-        stepperY.moveTo(targetY);
-        moving = true;
+void stepperTask(void *pvParameters) {
+    pinMode(ENABLE_PIN, OUTPUT);
+    digitalWrite(ENABLE_PIN, LOW); // enable drivers (active-low assumed)
+
+    stepperX.connectToPins(STEP_PIN_X, DIR_PIN_X);
+    stepperY.connectToPins(STEP_PIN_Y, DIR_PIN_Y);
+    stepperX.setAccelerationInStepsPerSecondPerSecond(800);
+    stepperY.setAccelerationInStepsPerSecondPerSecond(800);
+    stepperX.setSpeedInStepsPerSecond(2000);
+    stepperY.setSpeedInStepsPerSecond(2000);
+
+    for (;;) {
+        stepperX.processMovement();
+        stepperY.processMovement();
+
+        // Apply new target if available
+        bool apply = false;
+        TargetPosition tgt;
+        portENTER_CRITICAL(&targetMux);
+        if (targetPending) {
+            tgt = pendingTarget;
+            targetPending = false;
+            apply = true;
+        }
+        portEXIT_CRITICAL(&targetMux);
+        if (apply) {
+            stepperX.setTargetPositionInSteps(tgt.x);
+            stepperY.setTargetPositionInSteps(tgt.y);
+        }
+
+        // Update status
+        portENTER_CRITICAL(&statusMux);
+        status.currentX = stepperX.getCurrentPositionInSteps();
+        status.currentY = stepperY.getCurrentPositionInSteps();
+        status.moving = !(stepperX.motionComplete() && stepperY.motionComplete());
+        portEXIT_CRITICAL(&statusMux);
+
+        vTaskDelay(1);
     }
+}
+
+void uiTask(void *pvParameters) {
+    M5.begin();
+    M5.Display.setTextSize(2);
+
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) {
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
+
+    server.on("/move", HTTP_GET, handleMove);
+    server.begin();
+
+    for (;;) {
+        M5.update();
+
+        if (M5.Touch.ispressed()) {
+            auto p = M5.Touch.getPressPoint();
+            long x = map(p.x, 0, M5.Display.width(), 0, 10000);
+            long y = map(p.y, 0, M5.Display.height(), 0, 10000);
+            portENTER_CRITICAL(&targetMux);
+            pendingTarget.x = x;
+            pendingTarget.y = y;
+            targetPending = true;
+            portEXIT_CRITICAL(&targetMux);
+        }
+
+        // Display current status
+        SystemStatus local;
+        portENTER_CRITICAL(&statusMux);
+        local = status;
+        portEXIT_CRITICAL(&statusMux);
+
+        M5.Display.fillScreen(BLACK);
+        M5.Display.setCursor(0, 0);
+        M5.Display.printf("X:%ld Y:%ld\n", local.currentX, local.currentY);
+        M5.Display.printf("State: %s\n", local.moving ? "Moving" : "Idle");
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+void setup() {
+    xTaskCreatePinnedToCore(uiTask, "UI", 8192, NULL, 1, NULL, 0);     // Core 0
+    xTaskCreatePinnedToCore(stepperTask, "Stepper", 8192, NULL, 2, NULL, 1); // Core 1
 }
 
 void loop() {
-    if (Serial.available()) {
-        String line = Serial.readStringUntil('\n');
-        line.trim();
-        if (line.length() > 0) {
-            parseCommand(line);
-        }
-    }
-
-    stepperX.run();
-    stepperY.run();
-
-    if (moving && stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
-        moving = false;
-        Serial.println("NEXT"); // request next coordinate
-    }
+    // Nothing here; tasks handle everything
 }
 
