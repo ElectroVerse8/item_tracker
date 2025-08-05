@@ -142,6 +142,7 @@ def main():
         print('Sending to ESP32: Home')
         highlight_current(-1)
 
+
     def send_location(index: int = 0):
         nonlocal homed
         homed = False
@@ -232,6 +233,9 @@ def main():
     exit_btn = tk.Button(button_frame, text='Exit', command=handle_exit)
     exit_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     button_frame.pack(fill=tk.X)
+
+    # Send an initial Home command on startup
+    send_home()
 
     root.update_idletasks()
     root.minsize(max(root.winfo_reqwidth(), 300), root.winfo_reqheight())
