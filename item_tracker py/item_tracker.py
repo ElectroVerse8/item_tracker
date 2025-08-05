@@ -3,9 +3,11 @@
 
 Search for component locations using the built in search field, look up
 coordinates from an Excel spreadsheet and send them to an ESP32 over
-serial. The GUI shows the queued locations and lets you step through
-with a button or using a "NEXT" message from the board. Press Enter in
-the search field or click the Search button to queue locations.
+serial. Each message contains the human‑readable location
+(``Lx-Ry-Cz``) together with its ``X`` and ``Y`` coordinates. The GUI
+shows the queued locations and lets you step through with a button or
+using a "NEXT" message from the board. Press Enter in the search field
+or click the Search button to queue locations.
 
 Before running, make sure to:
 - Point ``EXCEL_PATH`` to the correct path of your ``locations.xlsx`` file.
@@ -147,7 +149,7 @@ def main():
         homed = False
         if 0 <= index < len(location_buffer):
             label, x_cm, y_cm = location_buffer[index]
-            msg = f"X:{x_cm:.2f},Y:{y_cm:.2f}\n"
+            msg = f"{label},X:{x_cm:.2f},Y:{y_cm:.2f}\n"
             ser.write(msg.encode('utf-8'))
             print(f"Sending to ESP32: {msg.strip()}")
             highlight_current(index)
