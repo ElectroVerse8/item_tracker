@@ -19,6 +19,10 @@ const int DIR_PIN_Y  = 13; // Y-axis DIR
 ESP_FlexyStepper stepperX;
 ESP_FlexyStepper stepperY;
 
+// Motion configuration
+const float ACCELERATION = 800.0f;  // steps/s^2
+const float TOP_SPEED    = 2000.0f; // steps/s
+
 struct TargetPosition {
     long x;
     long y;
@@ -33,7 +37,7 @@ struct SystemStatus {
 
 // Shared variables protected by critical sections
 volatile TargetPosition pendingTarget = {0, 0};
-volatile bool targetPending = false;
+volatile bool movePending = false; // flag set by event handlers
 portMUX_TYPE targetMux = portMUX_INITIALIZER_UNLOCKED;
 
 SystemStatus status = {0, 0, false, false};
@@ -48,7 +52,7 @@ void handleMove(AsyncWebServerRequest *request) {
         portENTER_CRITICAL(&targetMux);
         pendingTarget.x = x;
         pendingTarget.y = y;
-        targetPending = true;
+        movePending = true;
         portEXIT_CRITICAL(&targetMux);
         request->send(200, "text/plain", "OK");
     } else {
@@ -62,10 +66,10 @@ void stepperTask(void *pvParameters) {
 
     stepperX.connectToPins(STEP_PIN_X, DIR_PIN_X);
     stepperY.connectToPins(STEP_PIN_Y, DIR_PIN_Y);
-    stepperX.setAccelerationInStepsPerSecondPerSecond(800);
-    stepperY.setAccelerationInStepsPerSecondPerSecond(800);
-    stepperX.setSpeedInStepsPerSecond(2000);
-    stepperY.setSpeedInStepsPerSecond(2000);
+    stepperX.setAccelerationInStepsPerSecondPerSecond(ACCELERATION);
+    stepperY.setAccelerationInStepsPerSecondPerSecond(ACCELERATION);
+    stepperX.setSpeedInStepsPerSecond(TOP_SPEED);
+    stepperY.setSpeedInStepsPerSecond(TOP_SPEED);
 
     for (;;) {
         stepperX.processMovement();
@@ -75,9 +79,9 @@ void stepperTask(void *pvParameters) {
         bool apply = false;
         TargetPosition tgt;
         portENTER_CRITICAL(&targetMux);
-        if (targetPending) {
+        if (movePending) {
             tgt = pendingTarget;
-            targetPending = false;
+            movePending = false;
             apply = true;
         }
         portEXIT_CRITICAL(&targetMux);
@@ -119,7 +123,7 @@ void uiTask(void *pvParameters) {
             portENTER_CRITICAL(&targetMux);
             pendingTarget.x = x;
             pendingTarget.y = y;
-            targetPending = true;
+            movePending = true;
             portEXIT_CRITICAL(&targetMux);
         }
 
