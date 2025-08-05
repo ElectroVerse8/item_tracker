@@ -6,8 +6,8 @@
 #include <ESPAsyncWebServer.h>
 
 // WiFi credentials (replace with actual network details)
-const char* WIFI_SSID = "YOUR_SSID";
-const char* WIFI_PASSWORD = "YOUR_PASSWORD";
+const char* WIFI_SSID = "Robotpishop";
+const char* WIFI_PASSWORD = "6BD6B9F3";
 
 // Stepper motor pin definitions
 const int ENABLE_PIN = 4; // PA4 shared enable
