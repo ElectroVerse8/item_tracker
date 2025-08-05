@@ -18,7 +18,6 @@ import re
 import sys
 import time
 from pathlib import Path
-
 import pandas as pd
 import tkinter as tk
 import tkinter.messagebox as messagebox
@@ -27,7 +26,7 @@ from serial.tools import list_ports
 
 # -------------------------- Configuration --------------------------
 BAUD_RATE = 115200
-EXCEL_PATH = Path('locations.xlsx')  # Update path if needed
+EXCEL_PATH = Path('C:/Users/Maria/Documents/GitHub/item_tracker/item_tracker/locations.xlsx')  # Update path if needed
 EXCEL_SHEET = 'Sheet1'
 # Interval in milliseconds for periodically sending coordinates/home
 PERIOD_MS = 500
