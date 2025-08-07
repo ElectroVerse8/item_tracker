@@ -109,7 +109,7 @@ void stepperTask(void *pvParameters) {
         TargetPosition tgt;
         portENTER_CRITICAL(&targetMux);
         if (movePending) {
-            tgt = pendingTarget;
+            tgt = (TargetPosition)pendingTarget;
             movePending = false;
             apply = true;
         }
@@ -146,16 +146,16 @@ void uiTask(void *pvParameters) {
     for (;;) {
         M5.update();
 
-        if (M5.Touch.ispressed()) {
-            auto p = M5.Touch.getPressPoint();
-            long x = map(p.x, 0, M5.Display.width(), 0, 10000);
-            long y = map(p.y, 0, M5.Display.height(), 0, 10000);
+        auto touch = M5.Touch.getDetail(0);
+        if (touch.isPressed()) {
+            long x = map(touch.x, 0, M5.Display.width(), 0, 10000);
+            long y = map(touch.y, 0, M5.Display.height(), 0, 10000);
             portENTER_CRITICAL(&targetMux);
             pendingTarget.x = x;
             pendingTarget.y = y;
             movePending = true;
             portEXIT_CRITICAL(&targetMux);
-        }
+        }   
 
         // Display current status
         SystemStatus local;
