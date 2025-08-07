@@ -42,8 +42,8 @@ struct SystemStatus {
 };
 
 // Shared variables protected by critical sections
-volatile TargetPosition pendingTarget = {0, 0};
-volatile bool movePending = false; // flag set by event handlers
+TargetPosition pendingTarget = {0, 0};  
+bool movePending = false; // flag set by event handlers
 portMUX_TYPE targetMux = portMUX_INITIALIZER_UNLOCKED;
 
 SystemStatus status = {0, 0, false, false};
@@ -74,7 +74,7 @@ void handleHome(AsyncWebServerRequest *request) {
     portEXIT_CRITICAL(&targetMux);
     request->send(200, "text/plain", "OK");
 }
-
+/*
 void stepperTask(void *pvParameters) {
     pinMode(ENABLE_PIN, OUTPUT);
     digitalWrite(ENABLE_PIN, LOW); // enable drivers (active-low assumed)
@@ -129,7 +129,7 @@ void stepperTask(void *pvParameters) {
         vTaskDelay(1);
     }
 }
-
+*/
 void uiTask(void *pvParameters) {
     M5.begin();
     M5.Display.setTextSize(2);
