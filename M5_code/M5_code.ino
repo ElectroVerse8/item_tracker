@@ -4,6 +4,7 @@
 #include <M5Unified.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <HTTPClient.h>
 
 // WiFi credentials (replace with actual network details)
 const char* WIFI_SSID = "Robotpishop";
@@ -50,6 +51,10 @@ SystemStatus status = {0, 0, false, false};
 portMUX_TYPE statusMux = portMUX_INITIALIZER_UNLOCKED;
 
 AsyncWebServer server(80);
+const char* PYTHON_SERVER_URL = "http://192.168.4.2:8000"; // Update to Python host
+
+String currentLabel = "";
+portMUX_TYPE labelMux = portMUX_INITIALIZER_UNLOCKED;
 
 void handleMove(AsyncWebServerRequest *request) {
     if (request->hasParam("x") && request->hasParam("y")) {
@@ -60,6 +65,11 @@ void handleMove(AsyncWebServerRequest *request) {
         pendingTarget.y = y;
         movePending = true;
         portEXIT_CRITICAL(&targetMux);
+        if (request->hasParam("label")) {
+            portENTER_CRITICAL(&labelMux);
+            currentLabel = request->getParam("label")->value();
+            portEXIT_CRITICAL(&labelMux);
+        }
         request->send(200, "text/plain", "OK");
     } else {
         request->send(400, "text/plain", "Missing parameters");
@@ -133,6 +143,7 @@ void stepperTask(void *pvParameters) {
 void uiTask(void *pvParameters) {
     M5.begin();
     M5.Display.setTextSize(2);
+    M5.Display.setTextColor(BLACK, WHITE);
 
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     while (WiFi.status() != WL_CONNECTED) {
@@ -143,30 +154,38 @@ void uiTask(void *pvParameters) {
     server.on("/home", HTTP_GET, handleHome);
     server.begin();
 
+    const int buttonHeight = 60;
+
     for (;;) {
         M5.update();
 
+        // Draw UI
+        String labelCopy;
+        portENTER_CRITICAL(&labelMux);
+        labelCopy = currentLabel;
+        portEXIT_CRITICAL(&labelMux);
+
+        M5.Display.fillScreen(WHITE);
+        M5.Display.setCursor(10, 10);
+        M5.Display.printf("Target: %s", labelCopy.c_str());
+
+        int btnY = M5.Display.height() - buttonHeight;
+        M5.Display.fillRect(0, btnY, M5.Display.width(), buttonHeight, RED);
+        M5.Display.setTextColor(WHITE, RED);
+        M5.Display.setCursor(M5.Display.width()/2 - 20, btnY + buttonHeight/2 - 8);
+        M5.Display.print("NEXT");
+        M5.Display.setTextColor(BLACK, WHITE);
+
+        // Handle touch
         auto touch = M5.Touch.getDetail(0);
         if (touch.isPressed()) {
-            long x = map(touch.x, 0, M5.Display.width(), 0, 10000);
-            long y = map(touch.y, 0, M5.Display.height(), 0, 10000);
-            portENTER_CRITICAL(&targetMux);
-            pendingTarget.x = x;
-            pendingTarget.y = y;
-            movePending = true;
-            portEXIT_CRITICAL(&targetMux);
-        }   
-
-        // Display current status
-        SystemStatus local;
-        portENTER_CRITICAL(&statusMux);
-        local = status;
-        portEXIT_CRITICAL(&statusMux);
-
-        M5.Display.fillScreen(BLACK);
-        M5.Display.setCursor(0, 0);
-        M5.Display.printf("X:%ld Y:%ld\n", local.currentX, local.currentY);
-        M5.Display.printf("Moving:%s\n", local.moving ? "Yes" : "No");
+            if (touch.y >= btnY) {
+                HTTPClient client;
+                client.begin(String(PYTHON_SERVER_URL) + "/next");
+                client.GET();
+                client.end();
+            }
+        }
 
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }

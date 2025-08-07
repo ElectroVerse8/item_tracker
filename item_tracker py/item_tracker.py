@@ -19,6 +19,8 @@ from pathlib import Path
 import pandas as pd
 import tkinter as tk
 import requests
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # -------------------------- Configuration --------------------------
 EXCEL_PATH = Path('C:/Users/Maria/Documents/GitHub/item_tracker/item_tracker py/locations.xlsx')  # Update path if needed
@@ -95,8 +97,12 @@ def main():
             x_steps = int(x_cm * STEPS_PER_CM)
             y_steps = int(y_cm * STEPS_PER_CM)
             try:
-                requests.get(f"{ESP32_BASE_URL}/move", params={'x': x_steps, 'y': y_steps}, timeout=1)
-                print(f'Sending to ESP32: x={x_steps} y={y_steps}')
+                requests.get(
+                    f"{ESP32_BASE_URL}/move",
+                    params={'x': x_steps, 'y': y_steps, 'label': label},
+                    timeout=1,
+                )
+                print(f'Sending to ESP32: {label} x={x_steps} y={y_steps}')
             except requests.RequestException as exc:
                 print(f'Move request failed: {exc}')
             highlight_current(index)
@@ -159,6 +165,20 @@ def main():
     exit_btn = tk.Button(button_frame, text='Exit', command=handle_exit)
     exit_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     button_frame.pack(fill=tk.X)
+
+    class NextHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/next':
+                handle_next()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'OK')
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    httpd = HTTPServer(('0.0.0.0', 8000), NextHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
     # Send an initial Home command on startup
     send_home()
