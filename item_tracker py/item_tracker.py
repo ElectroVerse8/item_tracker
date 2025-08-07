@@ -3,89 +3,32 @@
 
 Search for component locations using the built in search field, look up
 coordinates from an Excel spreadsheet and send them to an ESP32 over
-serial. The GUI shows the queued locations and lets you step through
-with a button or using a "NEXT" message from the board. Press Enter in
-the search field or click the Search button to queue locations.
+WiFi using HTTP requests. The GUI shows the queued locations and lets
+you step through the locations. Press Enter in the search field or
+click the Search button to queue locations.
 
 Before running, make sure to:
 - Point ``EXCEL_PATH`` to the correct path of your ``locations.xlsx`` file.
-- Install dependencies with ``pip install pandas pyserial``.
-You'll be asked which serial port to use when the script starts.
-Tkinter is bundled with most Python installations and is used for the GUI.
+- Install dependencies with ``pip install pandas requests``.
+Update ``ESP32_BASE_URL`` to match your board's address. Tkinter is
+bundled with most Python installations and is used for the GUI.
 """
 
 import re
-import sys
-import time
 from pathlib import Path
 import pandas as pd
 import tkinter as tk
-import tkinter.messagebox as messagebox
-import serial
-from serial.tools import list_ports
+import requests
 
 # -------------------------- Configuration --------------------------
-BAUD_RATE = 115200
 EXCEL_PATH = Path('C:/Users/Maria/Documents/GitHub/item_tracker/item_tracker py/locations.xlsx')  # Update path if needed
 EXCEL_SHEET = 'Sheet1'
+ESP32_BASE_URL = 'http://192.168.4.1'  # Update to your board's address
+STEPS_PER_CM = 100  # steps per centimeter; match firmware
 # Interval in milliseconds for periodically sending coordinates/home
 PERIOD_MS = 500
 
 # -------------------------------------------------------------------
-
-
-def select_serial_port() -> serial.Serial:
-    """Prompt the user for a serial port and open it.
-
-    A small Tkinter window lists available ports with a Refresh button.
-    The dialog loops until a port is successfully opened, returning the
-    ``serial.Serial`` instance.
-    """
-
-    def show_dialog() -> str:
-        dlg = tk.Tk()
-        dlg.title('Select Serial Port')
-
-        ports = [p.device for p in list_ports.comports()]
-        port_var = tk.StringVar(value=ports[0] if ports else '')
-
-        option = tk.OptionMenu(dlg, port_var, *ports)
-        option.pack(padx=10, pady=5, fill=tk.X, expand=True)
-
-        def refresh():
-            new_ports = [p.device for p in list_ports.comports()]
-            menu = option['menu']
-            menu.delete(0, 'end')
-            for p in new_ports:
-                menu.add_command(label=p, command=lambda v=p: port_var.set(v))
-            if new_ports:
-                port_var.set(new_ports[0])
-            else:
-                port_var.set('')
-
-        tk.Button(dlg, text='Refresh', command=refresh).pack(pady=2, fill=tk.X)
-
-        selected = {'port': None}
-
-        def confirm():
-            selected['port'] = port_var.get()
-            dlg.destroy()
-
-        tk.Button(dlg, text='OK', command=confirm).pack(pady=5, fill=tk.X)
-        dlg.update_idletasks()
-        dlg.minsize(max(dlg.winfo_reqwidth(), 200), dlg.winfo_reqheight())
-        dlg.mainloop()
-        return selected['port']
-
-    while True:
-        port = show_dialog()
-        if not port:
-            continue
-        try:
-            ser = serial.Serial(port, BAUD_RATE, timeout=0.1)
-            return ser
-        except Exception as exc:
-            messagebox.showerror('Connection Error', f'Failed to open {port}: {exc}')
 
 
 def load_locations(path: Path, sheet: str) -> pd.DataFrame:
@@ -120,7 +63,6 @@ def parse_locations(text: str):
 
 def main():
     df = load_locations(EXCEL_PATH, EXCEL_SHEET)
-    ser = select_serial_port()
 
     location_buffer = []
     current_index = 0  # index of the item currently being sent
@@ -138,8 +80,11 @@ def main():
     def send_home():
         nonlocal homed
         homed = True
-        ser.write(b'Home\n')
-        print('Sending to ESP32: Home')
+        try:
+            requests.get(f"{ESP32_BASE_URL}/home", timeout=1)
+            print('Sending to ESP32: Home')
+        except requests.RequestException as exc:
+            print(f'Home request failed: {exc}')
         highlight_current(-1)
 
     def send_location(index: int = 0):
@@ -147,9 +92,13 @@ def main():
         homed = False
         if 0 <= index < len(location_buffer):
             label, x_cm, y_cm = location_buffer[index]
-            msg = f"X:{x_cm:.2f},Y:{y_cm:.2f}\n"
-            ser.write(msg.encode('utf-8'))
-            print(f"Sending to ESP32: {msg.strip()}")
+            x_steps = int(x_cm * STEPS_PER_CM)
+            y_steps = int(y_cm * STEPS_PER_CM)
+            try:
+                requests.get(f"{ESP32_BASE_URL}/move", params={'x': x_steps, 'y': y_steps}, timeout=1)
+                print(f'Sending to ESP32: x={x_steps} y={y_steps}')
+            except requests.RequestException as exc:
+                print(f'Move request failed: {exc}')
             highlight_current(index)
 
     search_var = tk.StringVar()
@@ -233,18 +182,13 @@ def main():
     exit_btn.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     button_frame.pack(fill=tk.X)
 
+    # Send an initial Home command on startup
+    send_home()
+
     root.update_idletasks()
     root.minsize(max(root.winfo_reqwidth(), 300), root.winfo_reqheight())
 
     def periodic():
-        try:
-            line = ser.readline().decode('utf-8')
-        except Exception:
-            line = ''
-
-        if line == 'NEXT\n':
-            handle_next()
-
         if location_buffer:
             if homed:
                 send_home()
@@ -257,7 +201,6 @@ def main():
 
     root.after(PERIOD_MS, periodic)
     root.mainloop()
-    ser.close()
 
 
 if __name__ == '__main__':

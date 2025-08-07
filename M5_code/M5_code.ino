@@ -16,12 +16,18 @@ const int DIR_PIN_X  = 17; // X-axis DIR
 const int STEP_PIN_Y = 12; // Y-axis STEP
 const int DIR_PIN_Y  = 13; // Y-axis DIR
 
+// Home switch pins (active-low)
+const int HOME_SWITCH_X = 25;
+const int HOME_SWITCH_Y = 26;
+
 ESP_FlexyStepper stepperX;
 ESP_FlexyStepper stepperY;
 
 // Motion configuration
 const float ACCELERATION = 800.0f;  // steps/s^2
 const float TOP_SPEED    = 2000.0f; // steps/s
+const float HOMING_SPEED = 800.0f;  // steps/s during homing
+const long  HOMING_MAX_DISTANCE = 50000; // max steps to search for switch
 
 struct TargetPosition {
     long x;
@@ -60,12 +66,35 @@ void handleMove(AsyncWebServerRequest *request) {
     }
 }
 
+void handleHome(AsyncWebServerRequest *request) {
+    portENTER_CRITICAL(&targetMux);
+    pendingTarget.x = 0;
+    pendingTarget.y = 0;
+    movePending = true;
+    portEXIT_CRITICAL(&targetMux);
+    request->send(200, "text/plain", "OK");
+}
+
 void stepperTask(void *pvParameters) {
     pinMode(ENABLE_PIN, OUTPUT);
     digitalWrite(ENABLE_PIN, LOW); // enable drivers (active-low assumed)
 
     stepperX.connectToPins(STEP_PIN_X, DIR_PIN_X);
     stepperY.connectToPins(STEP_PIN_Y, DIR_PIN_Y);
+    pinMode(HOME_SWITCH_X, INPUT_PULLUP);
+    pinMode(HOME_SWITCH_Y, INPUT_PULLUP);
+
+    // Startup homing with zero acceleration
+    stepperX.setAccelerationInStepsPerSecondPerSecond(0);
+    stepperY.setAccelerationInStepsPerSecondPerSecond(0);
+    stepperX.setSpeedInStepsPerSecond(HOMING_SPEED);
+    stepperY.setSpeedInStepsPerSecond(HOMING_SPEED);
+    stepperX.moveToHomeInSteps(-1, HOMING_SPEED, HOMING_MAX_DISTANCE, HOME_SWITCH_X);
+    stepperY.moveToHomeInSteps(-1, HOMING_SPEED, HOMING_MAX_DISTANCE, HOME_SWITCH_Y);
+    stepperX.setCurrentPositionInSteps(0);
+    stepperY.setCurrentPositionInSteps(0);
+
+    // Restore normal motion settings
     stepperX.setAccelerationInStepsPerSecondPerSecond(ACCELERATION);
     stepperY.setAccelerationInStepsPerSecondPerSecond(ACCELERATION);
     stepperX.setSpeedInStepsPerSecond(TOP_SPEED);
@@ -111,6 +140,7 @@ void uiTask(void *pvParameters) {
     }
 
     server.on("/move", HTTP_GET, handleMove);
+    server.on("/home", HTTP_GET, handleHome);
     server.begin();
 
     for (;;) {
