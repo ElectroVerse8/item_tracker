@@ -166,3 +166,18 @@ void uiTask(void *pvParameters) {
         M5.Display.fillScreen(BLACK);
         M5.Display.setCursor(0, 0);
         M5.Display.printf("X:%ld Y:%ld\n", local.currentX, local.currentY);
+        M5.Display.printf("Moving:%s\n", local.moving ? "Yes" : "No");
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+void setup() {
+    xTaskCreate(stepperTask, "Stepper", 4096, NULL, 1, NULL);
+    xTaskCreate(uiTask, "UI", 4096, NULL, 1, NULL);
+}
+
+void loop() {
+    vTaskDelay(portMAX_DELAY);
+}
+

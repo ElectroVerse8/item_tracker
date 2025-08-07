@@ -108,6 +108,12 @@ def main():
     # Trigger search when the user presses Enter inside the entry field.
     search_entry.bind("<Return>", lambda event: handle_search())
 
+    search_frame.pack(fill=tk.X)
+
+    list_var = tk.StringVar(value=[])
+    listbox = tk.Listbox(root, listvariable=list_var, height=8)
+    listbox.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
+
     def handle_search():
         nonlocal current_index
         text = search_var.get()
@@ -124,15 +130,19 @@ def main():
         list_var.set([e[0] for e in location_buffer])
         search_var.set('')
         if location_buffer:
-@@ -211,54 +160,48 @@ def main():
-           if location_buffer:
-                if current_index >= len(location_buffer):
-                    current_index = len(location_buffer) - 1
-                send_location(current_index)
-            else:
-                highlight_current(-1)
-                send_home()
-                current_index = 0
+            current_index = len(location_buffer) - 1
+            send_location(current_index)
+
+    def handle_next():
+        nonlocal current_index
+        if location_buffer:
+            if current_index < len(location_buffer) - 1:
+                current_index += 1
+            send_location(current_index)
+        else:
+            highlight_current(-1)
+            send_home()
+            current_index = 0
 
     def handle_exit():
         location_buffer.clear()
