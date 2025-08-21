@@ -84,8 +84,10 @@ void handleHome(AsyncWebServerRequest *request) {
     portEXIT_CRITICAL(&targetMux);
     request->send(200, "text/plain", "OK");
 }
-/*
+
 void stepperTask(void *pvParameters) {
+    Serial.begin(115200);
+    Serial.println("Started");
     pinMode(ENABLE_PIN, OUTPUT);
     digitalWrite(ENABLE_PIN, LOW); // enable drivers (active-low assumed)
 
@@ -125,6 +127,7 @@ void stepperTask(void *pvParameters) {
         }
         portEXIT_CRITICAL(&targetMux);
         if (apply) {
+            Serial.println("Applying...");
             stepperX.setTargetPositionInSteps(tgt.x);
             stepperY.setTargetPositionInSteps(tgt.y);
         }
@@ -136,10 +139,18 @@ void stepperTask(void *pvParameters) {
         status.moving = !(stepperX.motionComplete() && stepperY.motionComplete());
         portEXIT_CRITICAL(&statusMux);
 
+        if(Serial.available()){
+            String input = Serial.readStringUntil('\n'); 
+            movePending = true;
+            pendingTarget.x = input.toInt();
+            pendingTarget.y = 2;
+            Serial.println(input.toInt());
+        }
+
         vTaskDelay(1);
     }
 }
-*/
+/*
 void uiTask(void *pvParameters) {
     M5.begin();
     M5.Display.setTextSize(2);
@@ -184,16 +195,18 @@ void uiTask(void *pvParameters) {
                 client.begin(String(PYTHON_SERVER_URL) + "/next");
                 client.GET();
                 client.end();
+                Serial.println("Next command sent");
             }
         }
 
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
+*/
 
 void setup() {
     xTaskCreate(stepperTask, "Stepper", 4096, NULL, 1, NULL);
-    xTaskCreate(uiTask, "UI", 4096, NULL, 1, NULL);
+   // xTaskCreate(uiTask, "UI", 4096, NULL, 1, NULL);
 }
 
 void loop() {
